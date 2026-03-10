@@ -2,8 +2,8 @@ name: Real-Time Scraper
 
 on:
   schedule:
-    - cron: '15 6,10,13 * * *'  # 2:15 PM, 5:15 PM, 9:15 PM PHT (UTC+8: 14:15 = 6:15 UTC, etc.)
-  workflow_dispatch:  # allow manual trigger
+    - cron: '15 6,10,13 * * *'   # 2:15 PM, 5:15 PM, 9:15 PM PHT (UTC+8)
+  workflow_dispatch:
 
 jobs:
   scrape:
@@ -12,8 +12,8 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
         with:
-          node-version: '18'
-      - run: npm install axios cheerio
+          node-version: '18'      # Use Node 18 (fetch is native)
+      - run: npm install cheerio   # Only cheerio needed
       - run: node realtimeScraper.js
       - name: Upload results.json via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
