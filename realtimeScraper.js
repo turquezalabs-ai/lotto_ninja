@@ -1,6 +1,6 @@
 // realtimeScraper.js
-import * as cheerio from 'cheerio';
-import fs from 'fs/promises';
+const cheerio = require('cheerio');
+const fs = require('fs').promises;
 
 const RESULTS_FILE = 'results.json';
 const PRIZES = {
@@ -9,7 +9,6 @@ const PRIZES = {
 };
 
 function parseDate(dateStr) {
-  // Convert "March 9, 2026" to YYYY-MM-DD
   const months = {
     January: '01', February: '02', March: '03', April: '04', May: '05', June: '06',
     July: '07', August: '08', September: '09', October: '10', November: '11', December: '12'
@@ -88,29 +87,31 @@ async function mergeAndSave(newData) {
     const content = await fs.readFile(RESULTS_FILE, 'utf-8');
     existing = JSON.parse(content);
   } catch (err) {
-    // file may not exist
+    // File doesn't exist, start with empty array
   }
 
   const existingKeys = new Set(existing.map(r => `${r.game}|${r.date}`));
-  const added = [];
+  let addedCount = 0;
   for (const rec of newData) {
     const key = `${rec.game}|${rec.date}`;
     if (!existingKeys.has(key)) {
       existing.push(rec);
-      added.push(rec);
+      addedCount++;
     }
   }
 
-  if (added.length) {
+  if (addedCount > 0) {
     existing.sort((a, b) => b.date.localeCompare(a.date));
-    await fs.writeFile(RESULTS_FILE, JSON.stringify(existing, null, 2));
-    console.log(`✅ Added ${added.length} new records.`);
+    console.log(`✅ Added ${addedCount} new records.`);
   } else {
     console.log('ℹ️ No new records.');
   }
+
+  // Always write the file to ensure it exists for FTP upload
+  await fs.writeFile(RESULTS_FILE, JSON.stringify(existing, null, 2));
 }
 
-// Main
+// Main execution
 fetchAndParse()
   .then(mergeAndSave)
   .catch(err => {
