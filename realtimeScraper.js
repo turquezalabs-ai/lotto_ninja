@@ -1,6 +1,6 @@
 // realtimeScraper.js
+const axios = require('axios');
 const cheerio = require('cheerio');
-const fetch = require('node-fetch'); // node-fetch v2
 const fs = require('fs').promises;
 
 const RESULTS_FILE = 'results.json';
@@ -23,9 +23,10 @@ function parseDate(dateStr) {
 }
 
 async function fetchAndParse() {
-  const response = await fetch('https://www.lottopcso.com/');
-  const html = await response.text();
-  const $ = cheerio.load(html);
+  const response = await axios.get('https://www.lottopcso.com/', {
+    headers: { 'User-Agent': 'Mozilla/5.0' }
+  });
+  const $ = cheerio.load(response.data);
   const results = [];
 
   $('table.has-fixed-layout').each((_, table) => {
