@@ -1,0 +1,25 @@
+name: Real-Time Scraper
+
+on:
+  schedule:
+    - cron: '15 6,10,13 * * *'  # 2:15 PM, 5:15 PM, 9:15 PM PHT (UTC+8: 14:15 = 6:15 UTC, etc.)
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm install axios cheerio
+      - run: node realtimeScraper.js
+      - name: Upload results.json via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-file: ./results.json
+          remote-file: /public_html/staging/results.json
