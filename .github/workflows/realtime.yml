@@ -12,10 +12,15 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
         with:
-          node-version: '16'                     # 👈 Use Node 16 to avoid undici
-      - run: rm -rf node_modules package-lock.json # Fresh install
-      - run: npm install axios cheerio
+          node-version: '18'
+      
+      # Install dependencies including Puppeteer
+      - run: npm install puppeteer
+      
+      # Run the scraper
       - run: node realtimeScraper.js
+      
+      # Upload results.json via FTP
       - name: Upload results.json via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
