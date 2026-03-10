@@ -1,4 +1,3 @@
-// realtimeScraper.js
 const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs').promises;
@@ -88,9 +87,7 @@ async function mergeAndSave(newData) {
   try {
     const content = await fs.readFile(RESULTS_FILE, 'utf-8');
     existing = JSON.parse(content);
-  } catch (err) {
-    // File doesn't exist, start with empty array
-  }
+  } catch (err) {}
 
   const existingKeys = new Set(existing.map(r => `${r.game}|${r.date}`));
   let addedCount = 0;
@@ -109,14 +106,10 @@ async function mergeAndSave(newData) {
     console.log('ℹ️ No new records.');
   }
 
-  // Always write the file to ensure it exists for FTP upload
   await fs.writeFile(RESULTS_FILE, JSON.stringify(existing, null, 2));
 }
 
-// Main execution
-fetchAndParse()
-  .then(mergeAndSave)
-  .catch(err => {
-    console.error('❌ Fatal error:', err);
-    process.exit(1);
-  });
+fetchAndParse().then(mergeAndSave).catch(err => {
+  console.error('❌ Fatal error:', err);
+  process.exit(1);
+});
