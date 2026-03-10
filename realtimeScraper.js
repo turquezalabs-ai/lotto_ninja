@@ -1,5 +1,6 @@
 // realtimeScraper.js
 const cheerio = require('cheerio');
+const fetch = require('node-fetch'); // node-fetch v2
 const fs = require('fs').promises;
 
 const RESULTS_FILE = 'results.json';
