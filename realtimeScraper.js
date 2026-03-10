@@ -1,5 +1,5 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
+// realtimeScraper.js
+const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
 
 const RESULTS_FILE = 'results.json';
@@ -21,65 +21,107 @@ function parseDate(dateStr) {
   return `${year}-${monthNum}-${day.padStart(2, '0')}`;
 }
 
-async function fetchAndParse() {
-  const response = await axios.get('https://www.lottopcso.com/', {
-    headers: { 'User-Agent': 'Mozilla/5.0' }
+async function scrapeLottoPcso() {
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
-  const $ = cheerio.load(response.data);
-  const results = [];
-
-  $('table.has-fixed-layout').each((_, table) => {
-    const game = $(table).find('thead th:first-child').text().trim();
-    const dateStr = $(table).find('thead th:last-child').text().trim();
-    const drawDate = parseDate(dateStr);
-    if (!drawDate) return;
-
-    if (!['6D Lotto', '4D Lotto', '3D Lotto', '2D Lotto'].includes(game)) return;
-
-    const rows = $(table).find('tbody tr');
-
-    if (game === '3D Lotto' || game === '2D Lotto') {
-      rows.each((_, row) => {
-        const time = $(row).find('td:first-child').text().trim().replace(':00', '').replace(' ', '');
-        const combo = $(row).find('td:last-child').text().trim();
-        if (['2PM', '5PM', '9PM'].includes(time)) {
-          results.push({
-            date: drawDate,
-            game: `${game} ${time}`,
-            combination: combo,
-            prize: PRIZES[game.charAt(0)],
-            winners: 'TBA'
+  
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    
+    // Navigate and wait for content
+    await page.goto('https://www.lottopcso.com/', { 
+      waitUntil: 'networkidle0',
+      timeout: 30000 
+    });
+    
+    // Wait for tables to load
+    await page.waitForSelector('table.has-fixed-layout', { timeout: 10000 });
+    
+    // Extract data
+    const results = await page.evaluate((prizes) => {
+      const data = [];
+      const tables = document.querySelectorAll('table.has-fixed-layout');
+      
+      tables.forEach(table => {
+        const game = table.querySelector('thead th:first-child')?.textContent?.trim() || '';
+        const dateStr = table.querySelector('thead th:last-child')?.textContent?.trim() || '';
+        
+        if (!['6D Lotto', '4D Lotto', '3D Lotto', '2D Lotto'].includes(game)) return;
+        
+        const rows = table.querySelectorAll('tbody tr');
+        
+        if (game === '3D Lotto' || game === '2D Lotto') {
+          rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 2) return;
+            
+            let time = cells[0].textContent?.trim() || '';
+            const combo = cells[1].textContent?.trim() || '';
+            
+            // Convert "2:00 PM" to "2PM"
+            time = time.replace(':00', '').replace(' ', '');
+            
+            if (['2PM', '5PM', '9PM'].includes(time)) {
+              data.push({
+                date: dateStr,
+                game: `${game} ${time}`,
+                combination: combo,
+                prize: prizes[game.charAt(0)],
+                winners: 'TBA'
+              });
+            }
           });
+        } else if (game === '4D Lotto') {
+          let combo = '', prize = 'TBA', winners = 'TBA';
+          rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 2) return;
+            
+            const key = cells[0].textContent?.trim() || '';
+            const value = cells[1].textContent?.trim() || '';
+            
+            if (key === '9:00 PM') combo = value;
+            else if (key === 'First Prize') prize = value.startsWith('₱') ? value : `₱ ${value}`;
+            else if (key === 'Number of Winner(s)') winners = value;
+          });
+          if (combo) {
+            data.push({ date: dateStr, game: '4D Lotto', combination: combo, prize, winners });
+          }
+        } else if (game === '6D Lotto') {
+          let combo = '', prize = 'TBA', winners = 'TBA';
+          rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 2) return;
+            
+            const key = cells[0].textContent?.trim() || '';
+            const value = cells[1].textContent?.trim() || '';
+            
+            if (key === '9:00 PM') combo = value;
+            else if (key === 'First Prize') prize = value.startsWith('₱') ? value : `₱ ${value}`;
+            else if (key === 'Number of Winner(s)') winners = value;
+          });
+          if (combo) {
+            data.push({ date: dateStr, game: '6D Lotto', combination: combo, prize, winners });
+          }
         }
       });
-    } else if (game === '4D Lotto') {
-      let combo = '', prize = 'TBA', winners = 'TBA';
-      rows.each((_, row) => {
-        const key = $(row).find('td:first-child').text().trim();
-        const value = $(row).find('td:last-child').text().trim();
-        if (key === '9:00 PM') combo = value;
-        else if (key === 'First Prize') prize = value.startsWith('₱') ? value : `₱ ${value}`;
-        else if (key === 'Number of Winner(s)') winners = value;
-      });
-      if (combo) {
-        results.push({ date: drawDate, game: '4D Lotto', combination: combo, prize, winners });
-      }
-    } else if (game === '6D Lotto') {
-      let combo = '', prize = 'TBA', winners = 'TBA';
-      rows.each((_, row) => {
-        const key = $(row).find('td:first-child').text().trim();
-        const value = $(row).find('td:last-child').text().trim();
-        if (key === '9:00 PM') combo = value;
-        else if (key === 'First Prize') prize = value.startsWith('₱') ? value : `₱ ${value}`;
-        else if (key === 'Number of Winner(s)') winners = value;
-      });
-      if (combo) {
-        results.push({ date: drawDate, game: '6D Lotto', combination: combo, prize, winners });
-      }
-    }
-  });
-
-  return results;
+      
+      return data;
+    }, PRIZES);
+    
+    // Parse dates to YYYY-MM-DD format
+    results.forEach(r => {
+      r.date = parseDate(r.date);
+    });
+    
+    return results.filter(r => r.date); // Remove any with invalid dates
+    
+  } finally {
+    await browser.close();
+  }
 }
 
 async function mergeAndSave(newData) {
@@ -87,10 +129,13 @@ async function mergeAndSave(newData) {
   try {
     const content = await fs.readFile(RESULTS_FILE, 'utf-8');
     existing = JSON.parse(content);
-  } catch (err) {}
+  } catch (err) {
+    // File doesn't exist, start with empty array
+  }
 
   const existingKeys = new Set(existing.map(r => `${r.game}|${r.date}`));
   let addedCount = 0;
+  
   for (const rec of newData) {
     const key = `${rec.game}|${rec.date}`;
     if (!existingKeys.has(key)) {
@@ -106,10 +151,20 @@ async function mergeAndSave(newData) {
     console.log('ℹ️ No new records.');
   }
 
+  // Always write the file to ensure it exists for FTP upload
   await fs.writeFile(RESULTS_FILE, JSON.stringify(existing, null, 2));
 }
 
-fetchAndParse().then(mergeAndSave).catch(err => {
-  console.error('❌ Fatal error:', err);
-  process.exit(1);
-});
+// Main execution
+(async () => {
+  try {
+    console.log('🚀 Starting real-time scraper...');
+    const newData = await scrapeLottoPcso();
+    console.log(`📊 Found ${newData.length} records from lottopcso.com`);
+    await mergeAndSave(newData);
+    console.log('✅ Scraper completed successfully');
+  } catch (err) {
+    console.error('❌ Fatal error:', err);
+    process.exit(1);
+  }
+})();
