@@ -1,23 +1,43 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const fs = require('fs').promises;
+// realtimeScraper.js
+import * as cheerio from 'cheerio';
+import fs from 'fs/promises';
 
 const RESULTS_FILE = 'results.json';
-const PRIZES = { '3D': '₱ 4,500.00', '2D': '₱ 4,000.00' };
+const PRIZES = {
+  '3D': '₱ 4,500.00',
+  '2D': '₱ 4,000.00'
+};
+
+function parseDate(dateStr) {
+  // Convert "March 9, 2026" to YYYY-MM-DD
+  const months = {
+    January: '01', February: '02', March: '03', April: '04', May: '05', June: '06',
+    July: '07', August: '08', September: '09', October: '10', November: '11', December: '12'
+  };
+  const match = dateStr.match(/(\w+)\s+(\d+),\s+(\d+)/);
+  if (!match) return null;
+  const [, month, day, year] = match;
+  const monthNum = months[month];
+  if (!monthNum) return null;
+  return `${year}-${monthNum}-${day.padStart(2, '0')}`;
+}
 
 async function fetchAndParse() {
-  const { data } = await axios.get('https://www.lottopcso.com/');
-  const $ = cheerio.load(data);
+  const response = await fetch('https://www.lottopcso.com/');
+  const html = await response.text();
+  const $ = cheerio.load(html);
   const results = [];
 
   $('table.has-fixed-layout').each((_, table) => {
     const game = $(table).find('thead th:first-child').text().trim();
     const dateStr = $(table).find('thead th:last-child').text().trim();
-    const drawDate = new Date(dateStr).toISOString().split('T')[0]; // YYYY-MM-DD
+    const drawDate = parseDate(dateStr);
+    if (!drawDate) return;
 
     if (!['6D Lotto', '4D Lotto', '3D Lotto', '2D Lotto'].includes(game)) return;
 
     const rows = $(table).find('tbody tr');
+
     if (game === '3D Lotto' || game === '2D Lotto') {
       rows.each((_, row) => {
         const time = $(row).find('td:first-child').text().trim().replace(':00', '').replace(' ', '');
@@ -32,10 +52,33 @@ async function fetchAndParse() {
           });
         }
       });
-    } else {
-      // 4D and 6D logic similar...
+    } else if (game === '4D Lotto') {
+      let combo = '', prize = 'TBA', winners = 'TBA';
+      rows.each((_, row) => {
+        const key = $(row).find('td:first-child').text().trim();
+        const value = $(row).find('td:last-child').text().trim();
+        if (key === '9:00 PM') combo = value;
+        else if (key === 'First Prize') prize = value.startsWith('₱') ? value : `₱ ${value}`;
+        else if (key === 'Number of Winner(s)') winners = value;
+      });
+      if (combo) {
+        results.push({ date: drawDate, game: '4D Lotto', combination: combo, prize, winners });
+      }
+    } else if (game === '6D Lotto') {
+      let combo = '', prize = 'TBA', winners = 'TBA';
+      rows.each((_, row) => {
+        const key = $(row).find('td:first-child').text().trim();
+        const value = $(row).find('td:last-child').text().trim();
+        if (key === '9:00 PM') combo = value;
+        else if (key === 'First Prize') prize = value.startsWith('₱') ? value : `₱ ${value}`;
+        else if (key === 'Number of Winner(s)') winners = value;
+      });
+      if (combo) {
+        results.push({ date: drawDate, game: '6D Lotto', combination: combo, prize, winners });
+      }
     }
   });
+
   return results;
 }
 
@@ -44,7 +87,9 @@ async function mergeAndSave(newData) {
   try {
     const content = await fs.readFile(RESULTS_FILE, 'utf-8');
     existing = JSON.parse(content);
-  } catch (err) { /* file may not exist */ }
+  } catch (err) {
+    // file may not exist
+  }
 
   const existingKeys = new Set(existing.map(r => `${r.game}|${r.date}`));
   const added = [];
@@ -59,11 +104,16 @@ async function mergeAndSave(newData) {
   if (added.length) {
     existing.sort((a, b) => b.date.localeCompare(a.date));
     await fs.writeFile(RESULTS_FILE, JSON.stringify(existing, null, 2));
-    console.log(`Added ${added.length} new records.`);
+    console.log(`✅ Added ${added.length} new records.`);
   } else {
-    console.log('No new records.');
+    console.log('ℹ️ No new records.');
   }
 }
 
 // Main
-fetchAndParse().then(mergeAndSave).catch(console.error);
+fetchAndParse()
+  .then(mergeAndSave)
+  .catch(err => {
+    console.error('❌ Fatal error:', err);
+    process.exit(1);
+  });
