@@ -1,5 +1,5 @@
 // realtimeScraper.js
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const fs = require('fs').promises;
 
 const RESULTS_FILE = 'results.json';
@@ -23,6 +23,7 @@ function parseDate(dateStr) {
 
 async function scrapeLottoPcso() {
   const browser = await puppeteer.launch({
+    executablePath: '/usr/bin/google-chrome-stable', // Path to system Chrome
     headless: 'new',
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
@@ -31,14 +32,14 @@ async function scrapeLottoPcso() {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
     
-    // Navigate and wait for content
+    // Navigate with shorter timeout
     await page.goto('https://www.lottopcso.com/', { 
-      waitUntil: 'networkidle0',
-      timeout: 30000 
+      waitUntil: 'domcontentloaded', // Faster than networkidle0
+      timeout: 15000 
     });
     
     // Wait for tables to load
-    await page.waitForSelector('table.has-fixed-layout', { timeout: 10000 });
+    await page.waitForSelector('table.has-fixed-layout', { timeout: 5000 });
     
     // Extract data
     const results = await page.evaluate((prizes) => {
@@ -61,7 +62,6 @@ async function scrapeLottoPcso() {
             let time = cells[0].textContent?.trim() || '';
             const combo = cells[1].textContent?.trim() || '';
             
-            // Convert "2:00 PM" to "2PM"
             time = time.replace(':00', '').replace(' ', '');
             
             if (['2PM', '5PM', '9PM'].includes(time)) {
@@ -74,7 +74,7 @@ async function scrapeLottoPcso() {
               });
             }
           });
-        } else if (game === '4D Lotto') {
+        } else if (game === '4D Lotto' || game === '6D Lotto') {
           let combo = '', prize = 'TBA', winners = 'TBA';
           rows.forEach(row => {
             const cells = row.querySelectorAll('td');
@@ -88,23 +88,7 @@ async function scrapeLottoPcso() {
             else if (key === 'Number of Winner(s)') winners = value;
           });
           if (combo) {
-            data.push({ date: dateStr, game: '4D Lotto', combination: combo, prize, winners });
-          }
-        } else if (game === '6D Lotto') {
-          let combo = '', prize = 'TBA', winners = 'TBA';
-          rows.forEach(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length < 2) return;
-            
-            const key = cells[0].textContent?.trim() || '';
-            const value = cells[1].textContent?.trim() || '';
-            
-            if (key === '9:00 PM') combo = value;
-            else if (key === 'First Prize') prize = value.startsWith('₱') ? value : `₱ ${value}`;
-            else if (key === 'Number of Winner(s)') winners = value;
-          });
-          if (combo) {
-            data.push({ date: dateStr, game: '6D Lotto', combination: combo, prize, winners });
+            data.push({ date: dateStr, game, combination: combo, prize, winners });
           }
         }
       });
@@ -117,7 +101,7 @@ async function scrapeLottoPcso() {
       r.date = parseDate(r.date);
     });
     
-    return results.filter(r => r.date); // Remove any with invalid dates
+    return results.filter(r => r.date);
     
   } finally {
     await browser.close();
@@ -151,7 +135,6 @@ async function mergeAndSave(newData) {
     console.log('ℹ️ No new records.');
   }
 
-  // Always write the file to ensure it exists for FTP upload
   await fs.writeFile(RESULTS_FILE, JSON.stringify(existing, null, 2));
 }
 
